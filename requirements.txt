@@ -1,0 +1,10 @@
+ping3
+geoip2
+pandas
+folium
+numpy
+geopy
+matplotlib
+seaborn
+requests
+scipy
