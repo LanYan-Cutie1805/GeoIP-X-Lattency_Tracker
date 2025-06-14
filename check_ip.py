@@ -8,9 +8,10 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import requests
 from folium.plugins import MarkerCluster
-import subprocess
-import re
 import scipy.stats as stats
+import subprocess
+from branca.element import Template, MacroElement
+import re
 
 # Fetch my location coordinates
 def get_my_coordinates():
@@ -29,7 +30,7 @@ def get_my_coordinates():
 my_lat, my_lon = get_my_coordinates()
 MY_COORDINATES = (my_lat, my_lon)
 
-with open("ip_list.txt", "r") as file:
+with open("ipadd.txt", "r") as file:
     IP_LIST = [line.strip() for line in file if line.strip()]
 
 
@@ -40,17 +41,17 @@ data = []
 print()
 print("GeoIP is working")
 
+
 # KERJAAN WONG EDAN - counting trace route hops
 def get_hop_count(ip):
     try:
-        result = subprocess.run(['traceroute', '-d', '-h', '30', ip], capture_output=True, text=True, timeout=20)
-        hops = [line for line in result.stdout.splitlines('\n') if line.strip().startswith(str(len(hops)+ 1 ))]
-        trace_output = result.stdout.splitlines()
+        result = subprocess.run(['tracert', '-d', '-h', '30', ip], capture_output=True, text=True, timeout=30)
+        output = result.stdout.splitlines()
+        hops = [line for line in output if re.match(r'^\s*\d+\s', line)]
         return len(hops)
     except Exception as e:
         print(f"Error running traceroute for {ip}: {e}")
         return None
-
 
 
 for ip in IP_LIST:
@@ -72,7 +73,6 @@ for ip in IP_LIST:
             "Hop_count": hops
         })
 
-
     except Exception as e:
         print(f"Error processing IP {ip}: {e}")
     
@@ -81,7 +81,6 @@ reader.close()
 df = pd.DataFrame(data)
 print(df)
 print("End of GeoIP")
-print()
 print()
 
 
@@ -98,9 +97,25 @@ for _, row in df_clean.iterrows():
         f"City: {row['City']}<br>"
         f"Latency: {row['Latency_ms']} ms" if pd.notnull(row['Latency_ms']) else "Latency: N/A"
     )
-    folium.Marker(
+    latency = row['Latency_ms']
+    if pd.notnull(latency):
+        if latency < 50:
+            color = 'green'
+        elif latency < 150:
+            color = 'orange'
+        else:
+            color = 'red'
+    else:
+        color = 'grey'
+
+    folium.CircleMarker(
         location=[row['Latitude'], row['Longitude']],
-        popup=popup_text,
+        radius=6,
+        color=color,
+        fill=True,
+        fill_color=color,
+        fill_opacity=0.7,
+        popup=popup_text
         
     ).add_to(marker_cluster)
              
@@ -110,29 +125,20 @@ m.save('ip_map.html')
 
 # Latency VS distance calculation
 df = pd.DataFrame(data).dropna()
+print("Latency vs Distance DataFrame: The pingable addresses")
 print(df)
+print()
+# save to csv
+df.to_csv('PING-report.csv', index=False)
+
 
 # Pearson correlation (Data Analysis)
 correlation = df['Latency_ms'].corr(df['Distance_km'])
 print()
-print(f"Pearson correlation between Latency and Distance: {round(correlation, 3)}")
-
-# Regional outlier detection (within country)
-def detect_outliers_zscore(group, threshold=1.95):
-    mean = group['Latency_ms'].mean()
-    std = group['Latency_ms'].std()
-    group['z_score'] = (group['Latency_ms'] - mean) / std
-    group['Is_Outlier'] = np.abs(group['z_score']) > threshold
-    return group
+print(f"Pearson correlation between Latency and Distance: {round(correlation, 2)}")
 
 df_no_nan = df.dropna(subset=['Latency_ms', 'Country'])
 
-# Apply z-score outlier detection
-df_outliers = df_no_nan.groupby('Country', group_keys=False).apply(detect_outliers_zscore)
-
-regional_outliers = df_outliers[df_outliers['Is_Outlier'] == True]
-print("\nRegional Outliers Detected:")
-print(regional_outliers[['IP', 'Country', 'City', 'Latency_ms', 'Distance_km']])
 
 # Use IQR
 def detect_outliers_iqr(group):
@@ -147,13 +153,14 @@ def detect_outliers_iqr(group):
     print(f"Q1: {lower_bound}")
     print(f"Q3: {upper_bound}")
     return group
-
+detect_outliers_iqr(df)
 
 
 
 df_corr = df.dropna(subset=['Latency_ms', 'Hop_Count'])
 corr = df_corr['Latency_ms'].corr(df_corr['Hop_Count'])
 print(f"\nPearson correlation between Latency and Hop Count: {round(corr, 3)}")
+
 # Plotting the correlation between Latency and Hop Count
 plt.figure(figsize=(10, 6))
 sns.regplot(data=df_corr, x='Hop_Count', y='Latency_ms', scatter_kws={"s": 80}, line_kws={"color": "red"})
@@ -162,6 +169,7 @@ plt.xlabel('Hop Count')
 plt.ylabel('Latency (ms)')
 plt.tight_layout()
 plt.grid()
+
 
 # Plotting the results
 plt.figure(figsize=(10, 6)) 
@@ -173,16 +181,13 @@ plt.grid()
 plt.tight_layout()
 plt.show()
 
-# QQ plot for Latency vs Distance
-stats.probplot(df['Latency_ms'], dist="norm", plot=plt)
-plt.title('QQ Plot of Latency')
-plt.show()
 
-
-# latency base on countries
+# latency boxplot base on countries
 plt.figure(figsize=(12, 6))
 sns.boxplot(data=df, x='Country', y='Latency_ms')
 plt.xticks(rotation=45)
 plt.title('Latency Distribution by Country')
 plt.grid()
 plt.show()
+
+
