@@ -41,19 +41,6 @@ data = []
 print()
 print("GeoIP is working")
 
-
-# KERJAAN WONG EDAN - counting trace route hops
-def get_hop_count(ip):
-    try:
-        result = subprocess.run(['tracert', '-d', '-h', '30', ip], capture_output=True, text=True, timeout=30)
-        output = result.stdout.splitlines()
-        hops = [line for line in output if re.match(r'^\s*\d+\s', line)]
-        return len(hops)
-    except Exception as e:
-        print(f"Error running traceroute for {ip}: {e}")
-        return None
-
-
 for ip in IP_LIST:
     try:
         lattency = ping(ip, unit='ms')
@@ -70,7 +57,7 @@ for ip in IP_LIST:
             "City": geo.city.name,
             "Latency_ms": round(lattency, 2) if lattency is not None else None,
             "Distance_km": round(distance_km, 2),
-            "Hop_count": hops
+            
         })
 
     except Exception as e:
@@ -154,21 +141,6 @@ def detect_outliers_iqr(group):
     print(f"Q3: {upper_bound}")
     return group
 detect_outliers_iqr(df)
-
-
-
-df_corr = df.dropna(subset=['Latency_ms', 'Hop_Count'])
-corr = df_corr['Latency_ms'].corr(df_corr['Hop_Count'])
-print(f"\nPearson correlation between Latency and Hop Count: {round(corr, 3)}")
-
-# Plotting the correlation between Latency and Hop Count
-plt.figure(figsize=(10, 6))
-sns.regplot(data=df_corr, x='Hop_Count', y='Latency_ms', scatter_kws={"s": 80}, line_kws={"color": "red"})
-plt.title('Latency vs Hop Count')
-plt.xlabel('Hop Count')
-plt.ylabel('Latency (ms)')
-plt.tight_layout()
-plt.grid()
 
 
 # Plotting the results
